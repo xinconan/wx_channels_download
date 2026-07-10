@@ -396,6 +396,30 @@ func (c *Config) LoadConfig() error {
 		Group:       "OfficialAccount",
 	})
 	Register(ConfigItem{
+		Key:         "mp.articleSaver.enabled",
+		Type:        ConfigTypeBool,
+		Default:     false,
+		Description: "是否自动保存经过代理的公众号文章为 Markdown",
+		Title:       "自动保存文章",
+		Group:       "OfficialAccount",
+	})
+	Register(ConfigItem{
+		Key:         "mp.articleSaver.outputDir",
+		Type:        ConfigTypeString,
+		Default:     "articles",
+		Description: "公众号文章 Markdown 保存目录，支持相对配置目录或绝对路径",
+		Title:       "文章保存目录",
+		Group:       "OfficialAccount",
+	})
+	Register(ConfigItem{
+		Key:         "mp.articleSaver.keepVideo",
+		Type:        ConfigTypeBool,
+		Default:     false,
+		Description: "是否保留视频号加密视频链接，默认删除以避免离线不可播放链接",
+		Title:       "保留视频链接",
+		Group:       "OfficialAccount",
+	})
+	Register(ConfigItem{
 		Key:         "mp.refreshToken",
 		Type:        ConfigTypeString,
 		Default:     "",

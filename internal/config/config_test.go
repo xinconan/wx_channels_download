@@ -139,6 +139,7 @@ func loadTestConfig(t *testing.T, data string) *Config {
 
 func yamlSectionHasKey(data, section, key string) bool {
 	inSection := false
+	childIndent := -1
 	for _, line := range strings.Split(data, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
@@ -147,9 +148,13 @@ func yamlSectionHasKey(data, section, key string) bool {
 		indent := len(line) - len(strings.TrimLeft(line, " "))
 		if indent == 0 {
 			inSection = strings.TrimSuffix(trimmed, ":") == section
+			childIndent = -1
 			continue
 		}
-		if inSection && strings.HasPrefix(trimmed, key+":") {
+		if inSection && childIndent == -1 {
+			childIndent = indent
+		}
+		if inSection && indent == childIndent && strings.HasPrefix(trimmed, key+":") {
 			return true
 		}
 	}

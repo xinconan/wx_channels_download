@@ -46,6 +46,10 @@ channels:
 
 mp:
   enabled: false
+  articleSaver:
+    enabled: false
+    outputDir: "articles"
+    keepVideo: false
   remoteServer:
     protocol: "http"
     hostname: ""

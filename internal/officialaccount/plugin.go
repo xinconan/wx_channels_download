@@ -24,7 +24,20 @@ func CreateOfficialAccountInterceptorPlugin(cfg *OfficialAccountConfig, files *i
 		OnResponse: func(ctx proxy.Context) {
 			resp_content_type := strings.ToLower(ctx.GetResponseHeader("Content-Type"))
 			hostname := ctx.Req().URL.Hostname()
-			// pathname := ctx.Req().URL.Path
+			pathname := ctx.Req().URL.Path
+			if cfg.ArticleSaverEnabled && hostname == "mp.weixin.qq.com" && pathname == "/s" && strings.Contains(resp_content_type, "text/html") {
+				resp_body, err := ctx.GetResponseBody()
+				if err != nil {
+					fmt.Printf("[officialaccount] save article failed: read response body: %v\n", err)
+				} else if result, err := SaveArticleFromHTML(resp_body, "https://mp.weixin.qq.com"+pathname, ArticleSaveOptions{
+					OutputDir: cfg.ArticleSaverOutputDir,
+					KeepVideo: cfg.ArticleSaverKeepVideo,
+				}); err != nil {
+					fmt.Printf("[officialaccount] save article failed: %v\n", err)
+				} else {
+					fmt.Printf("[officialaccount] saved article: %s\n", result.MarkdownPath)
+				}
+			}
 			if cfg.Enabled && hostname == "mp.weixin.qq.com" && strings.Contains(resp_content_type, "text/html") {
 				resp_body, err := ctx.GetResponseBody()
 				if err != nil {

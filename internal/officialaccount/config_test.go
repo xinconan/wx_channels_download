@@ -49,3 +49,42 @@ func TestNewOfficialAccountConfigExposesEnabledFromMPEnabled(t *testing.T) {
 		t.Fatalf("officialAccountEnabled = %v, want true in JSON payload", payload["officialAccountEnabled"])
 	}
 }
+
+func TestNewOfficialAccountConfigLoadsArticleSaverSettings(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	rootDir := t.TempDir()
+	configPath := filepath.Join(rootDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(`mp:
+  enabled: true
+  articleSaver:
+    enabled: true
+    outputDir: "./articles"
+    keepVideo: true
+`), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	viper.SetConfigFile(configPath)
+	cfg := &config.Config{
+		RootDir:  rootDir,
+		Filename: "config.yaml",
+		FullPath: configPath,
+		Existing: true,
+	}
+	if err := cfg.LoadConfig(); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	got := NewOfficialAccountConfig(cfg, false)
+	if !got.ArticleSaverEnabled {
+		t.Fatal("ArticleSaverEnabled = false, want true")
+	}
+	if got.ArticleSaverOutputDir != filepath.Join(rootDir, "articles") {
+		t.Fatalf("ArticleSaverOutputDir = %q, want path under root dir", got.ArticleSaverOutputDir)
+	}
+	if !got.ArticleSaverKeepVideo {
+		t.Fatal("ArticleSaverKeepVideo = false, want true")
+	}
+}

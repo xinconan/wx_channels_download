@@ -151,6 +151,48 @@ func TestOfficialAccountMocksSameOriginStaticAssets(t *testing.T) {
 	}
 }
 
+func TestOfficialAccountPluginSavesArticleHTMLResponse(t *testing.T) {
+	outputDir := t.TempDir()
+	cfg := &OfficialAccountConfig{
+		Enabled:               false,
+		ArticleSaverEnabled:   true,
+		ArticleSaverOutputDir: outputDir,
+	}
+	plugin := CreateOfficialAccountInterceptorPlugin(cfg, nil, "test-version")
+	ctx := &officialAccountPluginContext{
+		req: &proxy.ContextReq{
+			URL: &proxy.ContextURL{
+				Path:     "/s",
+				Hostname: func() string { return "mp.weixin.qq.com" },
+			},
+			Header: make(http.Header),
+		},
+		res: &proxy.ContextRes{
+			Header: http.Header{},
+		},
+		body: `<script>
+var msg_title = '自动保存文章';
+var item = { content_noencode: '\x3cp\x3e保存正文\x3c/p\x3e\x3cmp-common-videosnap data-url=\x22https://findermp.video.qq.com/encrypted\x22\x3e\x3c/mp-common-videosnap\x3e' };
+</script>`,
+	}
+	ctx.res.Header.Set("Content-Type", "text/html; charset=utf-8")
+
+	plugin.OnResponse(ctx)
+
+	markdownPath := filepath.Join(outputDir, "自动保存文章.md")
+	markdown, err := os.ReadFile(markdownPath)
+	if err != nil {
+		t.Fatalf("expected article markdown to be saved: %v", err)
+	}
+	got := string(markdown)
+	if !strings.Contains(got, "保存正文") {
+		t.Fatalf("saved markdown missing body:\n%s", got)
+	}
+	if strings.Contains(got, "findermp.video.qq.com") {
+		t.Fatalf("saved markdown should remove encrypted video link:\n%s", got)
+	}
+}
+
 func newOfficialAccountTestInjectedFiles(t *testing.T, assets map[string]string) *interceptor.ChannelInjectedFiles {
 	t.Helper()
 

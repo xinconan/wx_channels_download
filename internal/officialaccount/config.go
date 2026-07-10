@@ -1,6 +1,7 @@
 package officialaccount
 
 import (
+	"path/filepath"
 	"strconv"
 
 	"github.com/spf13/viper"
@@ -27,6 +28,9 @@ type OfficialAccountConfig struct {
 	RefreshSkipMinutes        int
 	MaxWebsocketClients       int
 	AccountIdsRefreshInterval []string
+	ArticleSaverEnabled       bool
+	ArticleSaverOutputDir     string
+	ArticleSaverKeepVideo     bool
 }
 
 func NewOfficialAccountConfig(c *config.Config, remote_mode bool) *OfficialAccountConfig {
@@ -34,6 +38,13 @@ func NewOfficialAccountConfig(c *config.Config, remote_mode bool) *OfficialAccou
 	hostname := viper.GetString("api.hostname")
 	port := viper.GetInt("api.port")
 	enabled := config.IsMPEnabled()
+	articleSaverOutputDir := viper.GetString("mp.articleSaver.outputDir")
+	if articleSaverOutputDir == "" {
+		articleSaverOutputDir = "articles"
+	}
+	if !filepath.IsAbs(articleSaverOutputDir) {
+		articleSaverOutputDir = filepath.Join(c.RootDir, articleSaverOutputDir)
+	}
 	cfg := &OfficialAccountConfig{
 		RootDir:                   c.RootDir,
 		Enabled:                   enabled,
@@ -53,6 +64,9 @@ func NewOfficialAccountConfig(c *config.Config, remote_mode bool) *OfficialAccou
 		RefreshSkipMinutes:        viper.GetInt("mp.refreshSkipMinutes"),
 		MaxWebsocketClients:       viper.GetInt("mp.maxWebsocketClients"),
 		AccountIdsRefreshInterval: viper.GetStringSlice("mp.accountIdsRefreshInterval"),
+		ArticleSaverEnabled:       viper.GetBool("mp.articleSaver.enabled"),
+		ArticleSaverOutputDir:     articleSaverOutputDir,
+		ArticleSaverKeepVideo:     viper.GetBool("mp.articleSaver.keepVideo"),
 	}
 	return cfg
 }

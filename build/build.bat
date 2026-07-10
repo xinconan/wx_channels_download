@@ -3,6 +3,7 @@ setlocal enabledelayedexpansion
 
 set OUTPUT_DIR=%~dp0
 if "%OUTPUT_DIR%" neq "" set OUTPUT_DIR=%OUTPUT_DIR:~0,-1%
+set ROOT_DIR=%~dp0..
 
 if "%1" equ "" goto usage
 
@@ -13,11 +14,14 @@ echo Building Windows x86_64...
 set CGO_ENABLED=0
 set GOOS=windows
 set GOARCH=amd64
-go build -trimpath -ldflags="-s -w" -o "%OUTPUT_DIR%\wx_video_download_windows_x86_64.exe"
-if exist wx_channel.exe (
-    del wx_channel.exe
+pushd "%ROOT_DIR%"
+go build -trimpath -tags "with_gvisor,embed_inject" -ldflags="-s -w" -o "%OUTPUT_DIR%\wx_channel.exe" .
+if errorlevel 1 (
+    popd
+    echo Build failed.
+    exit /b 1
 )
-move /Y wx_video_download_windows_x86_64.exe wx_channel.exe >nul 2>&1
+popd
 echo Done: %OUTPUT_DIR%\wx_channel.exe
 exit /b 0
 
