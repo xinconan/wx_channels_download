@@ -35,6 +35,7 @@ import (
 	result "wx_channel/internal/util"
 	officialaccountdownload "wx_channel/pkg/officialaccount"
 	"wx_channel/pkg/system"
+	pkgutil "wx_channel/pkg/util"
 )
 
 func (c *APIClient) handleSearchChannelsContact(ctx *gin.Context) {
@@ -281,6 +282,7 @@ type FeedDownloadTaskBody struct {
 	Spec      string `json:"spec"`
 	Suffix    string `json:"suffix"`
 	Overwrite bool   `json:"overwrite"`
+	Duplicate bool   `json:"duplicate"`
 }
 
 type CreateTaskResp struct {
@@ -395,12 +397,13 @@ func (c *APIClient) handleCreateFeedDownloadTask(ctx *gin.Context) {
 		result.Err(ctx, 500, "请先初始化 downloader")
 		return
 	}
-	filename, dir, err := c.processTaskFilename(body.Filename, body.Suffix)
+	// 先用 NormalizeFilename（不做去重）计算初始路径，用于冲突检测
+	filename, dir, err := c.formatter.NormalizeFilename(body.Filename + body.Suffix)
 	if err != nil {
-		result.Err(ctx, 409, "不合法的文件名，"+err.Error())
+		result.Err(ctx, 410, "不合法的文件名，"+err.Error())
 		return
 	}
-	taskName := filename + body.Suffix
+	taskName := filename
 	taskPath := filepath.Join(c.cfg.DownloadDir, dir)
 	taskFilePath := filepath.Join(taskPath, taskName)
 	tasks := c.downloader.GetTasks()
@@ -414,21 +417,51 @@ func (c *APIClient) handleCreateFeedDownloadTask(ctx *gin.Context) {
 		result.Err(ctx, 500, "检查文件失败："+statErr.Error())
 		return
 	}
+	// 是否需要 ProcessFilename 做并发去重：
+	// - duplicate 模式：EnsureFilename 已保证唯一，不需要
+	// - 无冲突：NormalizeFilename 已给出正确名称，不需要
+	// - overwrite 模式：需要（处理并发 overwrite 请求）
+	needDedup := len(existingTasks) > 0 || fileExists
 	if len(existingTasks) > 0 || fileExists {
-		if !body.Overwrite {
-			result.Err(ctx, 409, "已存在该下载内容")
-			return
-		}
-		if err := c.deleteTasks(existingTasks, true); err != nil {
-			result.Err(ctx, 500, "删除已存在任务失败："+err.Error())
-			return
-		}
-		if fileExists {
-			if err := removeExistingDownloadFile(taskFilePath); err != nil {
-				result.Err(ctx, 500, "覆盖已存在文件失败："+err.Error())
+		if body.Duplicate || (len(existingTasks) == 0 && fileExists) {
+			// 重复下载：跳过冲突检查，用 EnsureFilename 找到不重名的文件名
+			// 本地已有同名文件时也默认走重复下载模式，自动追加 (n)
+			uniqueName, err := pkgutil.EnsureFilename(taskName, dir, c.cfg.DownloadDir)
+			if err != nil {
+				result.Err(ctx, 500, "生成唯一文件名失败："+err.Error())
 				return
 			}
+			taskName = uniqueName
+			taskFilePath = filepath.Join(taskPath, taskName)
+			needDedup = false
+		} else if !body.Overwrite {
+			result.Err(ctx, 409, "已存在该下载内容")
+			return
+		} else {
+			if err := c.deleteTasks(existingTasks, true); err != nil {
+				result.Err(ctx, 500, "删除已存在任务失败："+err.Error())
+				return
+			}
+			if fileExists {
+				if err := removeExistingDownloadFile(taskFilePath); err != nil {
+					result.Err(ctx, 500, "覆盖已存在文件失败："+err.Error())
+					return
+				}
+			}
+			// overwrite 后清除 in-memory 去重残留，后续 ProcessFilename 会重新登记
+			c.formatter.RemoveFilename(taskName, dir)
 		}
+	}
+	if needDedup {
+		// 并发去重：防止两个请求同时创建同名任务时文件名冲突
+		filename, dir, err = c.processTaskFilename(body.Filename, body.Suffix)
+		if err != nil {
+			result.Err(ctx, 410, "不合法的文件名，"+err.Error())
+			return
+		}
+		taskName = filename
+		taskPath = filepath.Join(c.cfg.DownloadDir, dir)
+		taskFilePath = filepath.Join(taskPath, taskName)
 	}
 	connections := c.resolve_connections(body.URL)
 	id, err := c.downloader.CreateDirect(
@@ -1046,10 +1079,10 @@ func (c *APIClient) handleCreateChannelsTask(ctx *gin.Context) {
 	}
 	filename, dir, err := c.processTaskFilename(payload.Filename, payload.Suffix)
 	if err != nil {
-		result.Err(ctx, 409, "不合法的文件名，"+err.Error())
+		result.Err(ctx, 410, "不合法的文件名，"+err.Error())
 		return
 	}
-	taskName := filename + payload.Suffix
+	taskName := filename
 	taskPath := filepath.Join(c.cfg.DownloadDir, dir)
 	connections := c.resolve_connections(payload.URL)
 	id, err := c.downloader.CreateDirect(
