@@ -3,13 +3,16 @@ package officialaccount
 import (
 	"errors"
 	"fmt"
-	"html"
+	stdhtml "html"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
+
+	nethtml "golang.org/x/net/html"
 )
 
 type ArticleSaveOptions struct {
@@ -36,36 +39,42 @@ var (
 		regexp.MustCompile(`msg_title\s*:\s*(['"])`),
 		regexp.MustCompile(`title\s*:\s*(['"])`),
 	}
-	titleTagReg       = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
-	activityNameReg   = regexp.MustCompile(`(?is)id=["']activity-name["'][^>]*>(.*?)</[^>]+>`)
-	jsContentReg      = regexp.MustCompile(`(?is)id=["']js_content["'][^>]*>(.*?)</div>`)
-	bodyReg           = regexp.MustCompile(`(?is)<body[^>]*>(.*?)</body>`)
-	imgReg            = regexp.MustCompile(`(?is)<img\b([^>]*)>`)
-	imgSrcAttrReg     = regexp.MustCompile(`(?i)(?:^|\s)src\s*=\s*("([^"]*)"|'([^']*)')`)
-	imgDataSrcAttrReg = regexp.MustCompile(`(?i)(?:^|\s)data-src\s*=\s*("([^"]*)"|'([^']*)')`)
-	imgAltAttrReg     = regexp.MustCompile(`(?i)(?:^|\s)alt\s*=\s*("([^"]*)"|'([^']*)')`)
-	videoSnapReg      = regexp.MustCompile(`(?is)<mp-common-videosnap\b([^>]*)>.*?</mp-common-videosnap>`)
-	videoURLAttrReg   = regexp.MustCompile(`(?i)(?:^|\s)data-url\s*=\s*("([^"]*)"|'([^']*)')`)
-	preReg            = regexp.MustCompile(`(?is)<pre\b.*?</pre>`)
-	codeContentReg    = regexp.MustCompile(`(?is)<code\b[^>]*>(.*?)</code>`)
-	brReg             = regexp.MustCompile(`(?i)<br\b[^>]*\/?>`)
-	tagReg            = regexp.MustCompile(`(?is)<[^>]+>`)
-	blockquoteReg     = regexp.MustCompile(`(?is)<blockquote\b[^>]*>(.*?)</blockquote>`)
-	codeFenceReg      = regexp.MustCompile(`(?is)<pre><code>(.*?)</code></pre>`)
-	h1Reg             = regexp.MustCompile(`(?is)<h1\b[^>]*>(.*?)</h1>`)
-	h2Reg             = regexp.MustCompile(`(?is)<h2\b[^>]*>(.*?)</h2>`)
-	h3Reg             = regexp.MustCompile(`(?is)<h3\b[^>]*>(.*?)</h3>`)
-	h4Reg             = regexp.MustCompile(`(?is)<h4\b[^>]*>(.*?)</h4>`)
-	linkReg           = regexp.MustCompile(`(?is)<a\b([^>]*)>(.*?)</a>`)
-	hrefAttrReg       = regexp.MustCompile(`(?i)(?:^|\s)href\s*=\s*("([^"]*)"|'([^']*)')`)
-	pReg              = regexp.MustCompile(`(?is)<p\b[^>]*>(.*?)</p>`)
-	liReg             = regexp.MustCompile(`(?is)<li\b[^>]*>(.*?)</li>`)
-	listWrapReg       = regexp.MustCompile(`(?is)</?(ul|ol)\b[^>]*>`)
-	structuralTagReg  = regexp.MustCompile(`(?is)</?(section|figure|span)\b[^>]*>`)
-	strongReg         = regexp.MustCompile(`(?is)<(strong|b)\b[^>]*>(.*?)</(strong|b)>`)
-	emReg             = regexp.MustCompile(`(?is)<(em|i)\b[^>]*>(.*?)</(em|i)>`)
-	inlineCodeReg     = regexp.MustCompile(`(?is)<code\b[^>]*>(.*?)</code>`)
-	hrReg             = regexp.MustCompile(`(?i)<hr\b[^>]*\/?>`)
+	titleTagReg                   = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
+	activityNameReg               = regexp.MustCompile(`(?is)id=["']activity-name["'][^>]*>(.*?)</[^>]+>`)
+	jsContentReg                  = regexp.MustCompile(`(?is)id=["']js_content["'][^>]*>(.*?)</div>`)
+	bodyReg                       = regexp.MustCompile(`(?is)<body[^>]*>(.*?)</body>`)
+	imgReg                        = regexp.MustCompile(`(?is)<img\b([^>]*)>`)
+	imgSrcAttrReg                 = regexp.MustCompile(`(?i)(?:^|\s)src\s*=\s*("([^"]*)"|'([^']*)')`)
+	imgDataSrcAttrReg             = regexp.MustCompile(`(?i)(?:^|\s)data-src\s*=\s*("([^"]*)"|'([^']*)')`)
+	imgAltAttrReg                 = regexp.MustCompile(`(?i)(?:^|\s)alt\s*=\s*("([^"]*)"|'([^']*)')`)
+	videoSnapReg                  = regexp.MustCompile(`(?is)<mp-common-videosnap\b([^>]*)>.*?</mp-common-videosnap>`)
+	videoURLAttrReg               = regexp.MustCompile(`(?i)(?:^|\s)data-url\s*=\s*("([^"]*)"|'([^']*)')`)
+	preReg                        = regexp.MustCompile(`(?is)<pre\b.*?</pre>`)
+	codeContentReg                = regexp.MustCompile(`(?is)<code\b[^>]*>(.*?)</code>`)
+	brReg                         = regexp.MustCompile(`(?i)<br\b[^>]*\/?>`)
+	tagReg                        = regexp.MustCompile(`(?is)<[^>]+>`)
+	highlightSpanReg              = regexp.MustCompile(`(?is)<span\b[^>]*\bleaf\s*=`)
+	highlightGapReg               = regexp.MustCompile(`(?is)(?:</span>\s*)+(<span\b[^>]*>)`)
+	highlightedCodeSpaceReg       = regexp.MustCompile(` {2,}`)
+	highlightedCodeTightSuffixReg = regexp.MustCompile(`\s+([)\].,;:])`)
+	highlightedCodeTightPrefixReg = regexp.MustCompile(`([(\[])\s+`)
+	highlightedCodeCallReg        = regexp.MustCompile(`([A-Za-z0-9_$])\s+\(`)
+	blockquoteReg                 = regexp.MustCompile(`(?is)<blockquote\b[^>]*>(.*?)</blockquote>`)
+	codeFenceReg                  = regexp.MustCompile(`(?is)<pre><code>(.*?)</code></pre>`)
+	h1Reg                         = regexp.MustCompile(`(?is)<h1\b[^>]*>(.*?)</h1>`)
+	h2Reg                         = regexp.MustCompile(`(?is)<h2\b[^>]*>(.*?)</h2>`)
+	h3Reg                         = regexp.MustCompile(`(?is)<h3\b[^>]*>(.*?)</h3>`)
+	h4Reg                         = regexp.MustCompile(`(?is)<h4\b[^>]*>(.*?)</h4>`)
+	linkReg                       = regexp.MustCompile(`(?is)<a\b([^>]*)>(.*?)</a>`)
+	hrefAttrReg                   = regexp.MustCompile(`(?i)(?:^|\s)href\s*=\s*("([^"]*)"|'([^']*)')`)
+	pReg                          = regexp.MustCompile(`(?is)<p\b[^>]*>(.*?)</p>`)
+	liReg                         = regexp.MustCompile(`(?is)<li\b[^>]*>(.*?)</li>`)
+	listWrapReg                   = regexp.MustCompile(`(?is)</?(ul|ol)\b[^>]*>`)
+	structuralTagReg              = regexp.MustCompile(`(?is)</?(section|figure|span)\b[^>]*>`)
+	strongReg                     = regexp.MustCompile(`(?is)<(strong|b)\b[^>]*>(.*?)</(strong|b)>`)
+	emReg                         = regexp.MustCompile(`(?is)<(em|i)\b[^>]*>(.*?)</(em|i)>`)
+	inlineCodeReg                 = regexp.MustCompile(`(?is)<code\b[^>]*>(.*?)</code>`)
+	hrReg                         = regexp.MustCompile(`(?i)<hr\b[^>]*\/?>`)
 )
 
 func ExtractArticleFromHTML(source []byte, fallbackPath string) (*SavedArticle, error) {
@@ -148,10 +157,8 @@ func PrepareArticleHTML(contentHTML string, options ArticleSaveOptions) string {
 		if len(codeMatch) > 1 {
 			code = codeMatch[1]
 		}
-		code = brReg.ReplaceAllString(code, "\n")
-		code = tagReg.ReplaceAllString(code, "")
-		code = strings.ReplaceAll(html.UnescapeString(code), "\u00a0", " ")
-		return "<pre><code>" + html.EscapeString(strings.TrimRight(code, "\n")) + "</code></pre>"
+		code = extractPreformattedText(code)
+		return "<pre><code>" + stdhtml.EscapeString(strings.TrimRight(code, "\n")) + "</code></pre>"
 	})
 	return brReg.ReplaceAllString(prepared, "\n")
 }
@@ -160,6 +167,7 @@ func ArticleHTMLToMarkdown(contentHTML string) string {
 	md := PrepareArticleHTML(contentHTML, ArticleSaveOptions{})
 	md = strings.ReplaceAll(md, "\r\n", "\n")
 	md = strings.ReplaceAll(md, "\r", "\n")
+	codeBlocks := make([]string, 0)
 	md = blockquoteReg.ReplaceAllStringFunc(md, func(block string) string {
 		match := blockquoteReg.FindStringSubmatch(block)
 		if len(match) < 2 {
@@ -179,8 +187,9 @@ func ArticleHTMLToMarkdown(contentHTML string) string {
 		if len(match) < 2 {
 			return ""
 		}
-		code := strings.TrimRight(html.UnescapeString(match[1]), "\n")
-		return "\n\n```\n" + code + "\n```\n\n"
+		code := strings.TrimRight(stdhtml.UnescapeString(match[1]), "\n")
+		codeBlocks = append(codeBlocks, "\n\n```\n"+code+"\n```\n\n")
+		return articleCodeBlockPlaceholder(len(codeBlocks) - 1)
 	})
 	md = h1Reg.ReplaceAllStringFunc(md, func(s string) string { return headingMarkdown(s, h1Reg, "#") })
 	md = h2Reg.ReplaceAllStringFunc(md, func(s string) string { return headingMarkdown(s, h2Reg, "##") })
@@ -195,11 +204,15 @@ func ArticleHTMLToMarkdown(contentHTML string) string {
 		if len(src) < 3 {
 			return ""
 		}
+		imageURL := strings.TrimSpace(stdhtml.UnescapeString(attrValue(src)))
+		if imageURL == "" {
+			return ""
+		}
 		altText := ""
 		if alt := imgAltAttrReg.FindStringSubmatch(attrs[1]); len(alt) > 2 {
 			altText = stripArticleTags(attrValue(alt))
 		}
-		return "\n\n![" + altText + "](" + html.UnescapeString(attrValue(src)) + ")\n\n"
+		return "\n\n![" + altText + "](" + imageURL + ")\n\n"
 	})
 	md = linkReg.ReplaceAllStringFunc(md, func(link string) string {
 		match := linkReg.FindStringSubmatch(link)
@@ -211,7 +224,7 @@ func ArticleHTMLToMarkdown(contentHTML string) string {
 		if len(href) < 3 {
 			return label
 		}
-		return "[" + label + "](" + html.UnescapeString(attrValue(href)) + ")"
+		return "[" + label + "](" + stdhtml.UnescapeString(attrValue(href)) + ")"
 	})
 	md = pReg.ReplaceAllStringFunc(md, func(p string) string {
 		match := pReg.FindStringSubmatch(p)
@@ -240,8 +253,83 @@ func ArticleHTMLToMarkdown(contentHTML string) string {
 	})
 	md = hrReg.ReplaceAllString(md, "\n\n---\n\n")
 	md = tagReg.ReplaceAllString(md, "")
-	md = strings.ReplaceAll(html.UnescapeString(md), "\u00a0", " ")
+	md = strings.ReplaceAll(stdhtml.UnescapeString(md), "\u00a0", " ")
+	for i, block := range codeBlocks {
+		md = strings.ReplaceAll(md, articleCodeBlockPlaceholder(i), block)
+	}
 	return normalizeArticleMarkdown(md)
+}
+
+func extractPreformattedText(source string) string {
+	decodedSource := stdhtml.UnescapeString(source)
+	if highlightSpanReg.MatchString(decodedSource) {
+		decodedSource = highlightGapReg.ReplaceAllString(decodedSource, articleHighlightGapPlaceholder+`$1`)
+		decodedSource = brReg.ReplaceAllString(decodedSource, "\n")
+		decodedSource = tagReg.ReplaceAllString(decodedSource, "")
+		decodedSource = restoreHighlightedCodeSpacing(decodedSource)
+		decodedSource = normalizeHighlightedCodeText(decodedSource)
+		return strings.ReplaceAll(decodedSource, "\u00a0", " ")
+	}
+
+	text, ok := extractTextFromHTMLFragment(source)
+	if !ok {
+		text := brReg.ReplaceAllString(source, "\n")
+		return strings.ReplaceAll(stdhtml.UnescapeString(text), "\u00a0", " ")
+	}
+	decoded := stdhtml.UnescapeString(text)
+	if highlightSpanReg.MatchString(decoded) {
+		decoded = brReg.ReplaceAllString(decoded, "\n")
+		text = tagReg.ReplaceAllString(decoded, "")
+	} else {
+		text = decoded
+	}
+	return strings.ReplaceAll(text, "\u00a0", " ")
+}
+
+func extractTextFromHTMLFragment(source string) (string, bool) {
+	fragment, err := nethtml.ParseFragment(strings.NewReader("<div>"+source+"</div>"), &nethtml.Node{
+		Type: nethtml.ElementNode,
+		Data: "div",
+	})
+	if err != nil {
+		return "", false
+	}
+
+	var root *nethtml.Node
+	for _, node := range fragment {
+		if node.Type == nethtml.ElementNode && node.Data == "div" {
+			root = node
+			break
+		}
+	}
+	if root == nil {
+		return "", false
+	}
+
+	var b strings.Builder
+	var walk func(*nethtml.Node)
+	walk = func(node *nethtml.Node) {
+		if node == nil {
+			return
+		}
+		switch node.Type {
+		case nethtml.TextNode:
+			b.WriteString(node.Data)
+		case nethtml.ElementNode:
+			if node.Data == "br" {
+				b.WriteByte('\n')
+				return
+			}
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+
+	for child := root.FirstChild; child != nil; child = child.NextSibling {
+		walk(child)
+	}
+	return b.String(), true
 }
 
 func extractContentNoencode(source string) (string, bool) {
@@ -387,10 +475,92 @@ func attrValue(match []string) string {
 	return ""
 }
 
+func articleCodeBlockPlaceholder(index int) string {
+	return fmt.Sprintf("ARTICLECODEBLOCK%dPLACEHOLDER", index)
+}
+
+const articleHighlightGapPlaceholder = "ARTICLEHIGHLIGHTGAPPLACEHOLDER"
+
+func restoreHighlightedCodeSpacing(source string) string {
+	var b strings.Builder
+	for i := 0; i < len(source); {
+		if strings.HasPrefix(source[i:], articleHighlightGapPlaceholder) {
+			prev, hasPrev := previousNonSpaceRune(source[:i])
+			next, hasNext := nextNonSpaceRune(source[i+len(articleHighlightGapPlaceholder):])
+			if hasPrev && hasNext && shouldInsertHighlightedSpace(prev, next) {
+				b.WriteByte(' ')
+			}
+			i += len(articleHighlightGapPlaceholder)
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(source[i:])
+		b.WriteRune(r)
+		i += size
+	}
+	return b.String()
+}
+
+func normalizeHighlightedCodeText(source string) string {
+	lines := strings.Split(source, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimRight(line, " \t")
+		indentLen := len(trimmed) - len(strings.TrimLeft(trimmed, " \t"))
+		if indentLen == 1 {
+			indentLen = 0
+		}
+		indent := trimmed[:indentLen]
+		body := trimmed[indentLen:]
+		if strings.HasPrefix(body, " ") && !strings.HasPrefix(body, "  ") {
+			body = strings.TrimLeft(body, " ")
+		}
+		body = highlightedCodeSpaceReg.ReplaceAllString(body, " ")
+		body = highlightedCodeTightSuffixReg.ReplaceAllString(body, `$1`)
+		body = highlightedCodeTightPrefixReg.ReplaceAllString(body, `$1`)
+		body = highlightedCodeCallReg.ReplaceAllString(body, `$1(`)
+		lines[i] = indent + body
+	}
+	return strings.Join(lines, "\n")
+}
+
+func previousNonSpaceRune(source string) (rune, bool) {
+	for len(source) > 0 {
+		r, size := utf8.DecodeLastRuneInString(source)
+		source = source[:len(source)-size]
+		if !unicode.IsSpace(r) {
+			return r, true
+		}
+	}
+	return 0, false
+}
+
+func nextNonSpaceRune(source string) (rune, bool) {
+	for len(source) > 0 {
+		r, size := utf8.DecodeRuneInString(source)
+		source = source[size:]
+		if !unicode.IsSpace(r) {
+			return r, true
+		}
+	}
+	return 0, false
+}
+
+func shouldInsertHighlightedSpace(prev rune, next rune) bool {
+	if unicode.IsSpace(prev) || unicode.IsSpace(next) {
+		return false
+	}
+	if strings.ContainsRune("([{.,:;<>+-*/=%&|!?~", prev) {
+		return false
+	}
+	if strings.ContainsRune(")]},.:;<>+-*/=%&|!?~", next) {
+		return false
+	}
+	return true
+}
+
 func stripArticleTags(source string) string {
 	text := brReg.ReplaceAllString(source, "\n")
 	text = tagReg.ReplaceAllString(text, "")
-	text = strings.ReplaceAll(html.UnescapeString(text), "\u00a0", " ")
+	text = strings.ReplaceAll(stdhtml.UnescapeString(text), "\u00a0", " ")
 	return strings.TrimSpace(text)
 }
 
