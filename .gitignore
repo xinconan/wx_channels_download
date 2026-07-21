@@ -12,6 +12,7 @@ wx_channel*
 
 scraper_examples
 cache
+.gocache/*
 workdir
 
 config.yaml
