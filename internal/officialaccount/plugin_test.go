@@ -1,6 +1,7 @@
 package officialaccount
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -151,6 +152,38 @@ func TestOfficialAccountMocksSameOriginStaticAssets(t *testing.T) {
 	}
 }
 
+func TestOfficialAccountVideoPluginMatchesMPVideoHost(t *testing.T) {
+	plugin := CreateOfficialAccountVideoInterceptorPlugin(&OfficialAccountConfig{})
+	if plugin.Match != "mpvideo.qpic.cn" {
+		t.Fatalf("Match = %q, want mpvideo.qpic.cn", plugin.Match)
+	}
+	if plugin.OnRequest == nil {
+		t.Fatal("video plugin must handle requests")
+	}
+}
+
+func TestOfficialAccountVideoPluginPrintsEachURLOnce(t *testing.T) {
+	plugin := CreateOfficialAccountVideoInterceptorPlugin(&OfficialAccountConfig{ArticleSaverEnabled: true})
+	ctx := &officialAccountPluginContext{
+		req: &proxy.ContextReq{
+			URL: &proxy.ContextURL{
+				Path:     "/0bc3x2p4pnv",
+				Hostname: func() string { return "mpvideo.qpic.cn" },
+				RawQuery: "dis_k=token",
+			},
+		},
+	}
+
+	output := captureOfficialAccountPluginStdout(t, func() {
+		plugin.OnRequest(ctx)
+		plugin.OnRequest(ctx)
+	})
+	want := "https://mpvideo.qpic.cn/0bc3x2p4pnv?dis_k=token\n"
+	if output != want {
+		t.Fatalf("output = %q, want %q", output, want)
+	}
+}
+
 func TestOfficialAccountPluginSavesArticleHTMLResponse(t *testing.T) {
 	outputDir := t.TempDir()
 	cfg := &OfficialAccountConfig{
@@ -207,4 +240,28 @@ func newOfficialAccountTestInjectedFiles(t *testing.T, assets map[string]string)
 		}
 	}
 	return interceptor.NewChannelInjectedFiles(injectDir)
+}
+
+func captureOfficialAccountPluginStdout(t *testing.T, f func()) string {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdout pipe: %v", err)
+	}
+	defer r.Close()
+
+	stdout := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = stdout }()
+
+	f()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stdout pipe: %v", err)
+	}
+	output, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	return string(output)
 }

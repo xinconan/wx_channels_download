@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
 	"wx_channel/internal/interceptor"
 	"wx_channel/internal/interceptor/proxy"
@@ -86,6 +87,23 @@ func CreateOfficialAccountInterceptorPlugin(cfg *OfficialAccountConfig, files *i
 				html = strings.Replace(html, "</body>", injected.String()+"</body>", 1)
 				ctx.SetResponseBody(html)
 				return
+			}
+		},
+	}
+}
+
+func CreateOfficialAccountVideoInterceptorPlugin(cfg *OfficialAccountConfig) *proxy.Plugin {
+	var seenVideoURLs sync.Map
+	return &proxy.Plugin{
+		Match: "mpvideo.qpic.cn",
+		OnRequest: func(ctx proxy.Context) {
+			if !cfg.ArticleSaverEnabled {
+				return
+			}
+			if videoURL, ok := articleSaverMPVideoRequestURL(ctx.Req().URL.Hostname(), ctx.Req().URL.Path, ctx.Req().URL.RawQuery); ok {
+				if _, loaded := seenVideoURLs.LoadOrStore(videoURL, struct{}{}); !loaded {
+					fmt.Println(videoURL)
+				}
 			}
 		},
 	}

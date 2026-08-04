@@ -41,6 +41,21 @@ func TestPrepareArticleHTMLFixesImagesAndRemovesVideos(t *testing.T) {
 	}
 }
 
+func TestArticleSaverMPVideoRequestURL(t *testing.T) {
+	got, ok := articleSaverMPVideoRequestURL("mpvideo.qpic.cn", "/0bc3x2p4pnv", "dis_k=token&__biz=biz")
+	if !ok {
+		t.Fatal("mpvideo request should be recognized")
+	}
+	want := "https://mpvideo.qpic.cn/0bc3x2p4pnv?dis_k=token&__biz=biz"
+	if got != want {
+		t.Fatalf("URL = %q, want %q", got, want)
+	}
+
+	if _, ok := articleSaverMPVideoRequestURL("mmbiz.qpic.cn", "/image", "wx_fmt=png"); ok {
+		t.Fatal("non-mpvideo request should not be recognized")
+	}
+}
+
 func TestArticleHTMLToMarkdown(t *testing.T) {
 	markdown := ArticleHTMLToMarkdown(`<h2>Heading</h2>
 <p>first line<br>second line</p>

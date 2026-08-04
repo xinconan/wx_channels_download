@@ -154,6 +154,7 @@ func root_command(cfg *config.Config) {
 	interceptor_srv := interceptor.NewInterceptorServer(interceptor_cfg, CertFiles)
 	if official_cfg.Enabled || official_cfg.ArticleSaverEnabled {
 		interceptor_srv.Interceptor.AddPostPlugin(officialaccount.CreateOfficialAccountInterceptorPlugin(official_cfg, interceptor.Assets, cfg.Version))
+		interceptor_srv.Interceptor.AddPostPlugin(officialaccount.CreateOfficialAccountVideoInterceptorPlugin(official_cfg))
 	}
 	if official_cfg.Enabled {
 		interceptor_srv.Interceptor.AddPostPlugin(&proxy.Plugin{

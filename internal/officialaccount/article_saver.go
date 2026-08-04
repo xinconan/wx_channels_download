@@ -124,6 +124,17 @@ func SaveArticle(article *SavedArticle, options ArticleSaveOptions) (*ArticleSav
 	return &ArticleSaveResult{Title: article.Title, MarkdownPath: markdownPath, ContentHTMLPath: contentHTMLPath}, nil
 }
 
+func articleSaverMPVideoRequestURL(hostname, pathname, rawQuery string) (string, bool) {
+	if hostname != "mpvideo.qpic.cn" {
+		return "", false
+	}
+	url := "https://" + hostname + pathname
+	if rawQuery != "" {
+		url += "?" + rawQuery
+	}
+	return url, true
+}
+
 func PrepareArticleHTML(contentHTML string, options ArticleSaveOptions) string {
 	prepared := imgReg.ReplaceAllStringFunc(contentHTML, func(tag string) string {
 		attrs := imgReg.FindStringSubmatch(tag)
