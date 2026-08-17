@@ -59,6 +59,7 @@ func TestArticleSaverMPVideoRequestURL(t *testing.T) {
 func TestArticleHTMLToMarkdown(t *testing.T) {
 	markdown := ArticleHTMLToMarkdown(`<h2>Heading</h2>
 <p>first line<br>second line</p>
+<p><strong>strong text</strong> and <b>bold text</b></p>
 <pre><code>npm init -y<br>node index.js</code></pre>
 <blockquote><p>quoted text</p></blockquote>
 <img src="https://mmbiz.qpic.cn/test/640?wx_fmt=png" alt="demo">`)
@@ -69,6 +70,7 @@ func TestArticleHTMLToMarkdown(t *testing.T) {
 		"```\nnpm init -y\nnode index.js\n```",
 		"> quoted text",
 		"![demo](https://mmbiz.qpic.cn/test/640?wx_fmt=png)",
+		"**strong text** and **bold text**",
 	} {
 		if !strings.Contains(markdown, want) {
 			t.Fatalf("markdown missing %q:\n%s", want, markdown)

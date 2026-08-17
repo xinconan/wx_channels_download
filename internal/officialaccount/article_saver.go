@@ -202,6 +202,8 @@ func ArticleHTMLToMarkdown(contentHTML string) string {
 		codeBlocks = append(codeBlocks, "\n\n```\n"+code+"\n```\n\n")
 		return articleCodeBlockPlaceholder(len(codeBlocks) - 1)
 	})
+	md = strongReg.ReplaceAllString(md, "**$2**")
+	md = emReg.ReplaceAllString(md, "*$2*")
 	md = h1Reg.ReplaceAllStringFunc(md, func(s string) string { return headingMarkdown(s, h1Reg, "#") })
 	md = h2Reg.ReplaceAllStringFunc(md, func(s string) string { return headingMarkdown(s, h2Reg, "##") })
 	md = h3Reg.ReplaceAllStringFunc(md, func(s string) string { return headingMarkdown(s, h3Reg, "###") })
@@ -253,8 +255,6 @@ func ArticleHTMLToMarkdown(contentHTML string) string {
 	})
 	md = listWrapReg.ReplaceAllString(md, "\n")
 	md = structuralTagReg.ReplaceAllString(md, "")
-	md = strongReg.ReplaceAllString(md, "**$2**")
-	md = emReg.ReplaceAllString(md, "*$2*")
 	md = inlineCodeReg.ReplaceAllStringFunc(md, func(code string) string {
 		match := inlineCodeReg.FindStringSubmatch(code)
 		if len(match) < 2 {
