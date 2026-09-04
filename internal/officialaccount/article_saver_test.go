@@ -115,6 +115,40 @@ func TestArticleHTMLToMarkdownDecodesHighlightedCodeBlocks(t *testing.T) {
 	}
 }
 
+func TestArticleHTMLToMarkdownConvertsTables(t *testing.T) {
+	markdown := ArticleHTMLToMarkdown(`<p>before</p>
+<table style="display: table;text-align: left;"><thead><tr><th style="color: rgb(63, 63, 63);"><section><span leaf="">type</span></section></th><th style="color: rgb(63, 63, 63);"><section><span leaf="">含义</span></section></th></tr></thead><tbody><tr><td><section><span leaf="">PERSON</span></section></td><td><section><span leaf="">人、角色</span></section></td></tr><tr><td><section><span leaf="">ORGANIZATION</span></section></td><td><section><span leaf="">组织、部门</span></section></td></tr></tbody></table>
+<p>after</p>`)
+
+	for _, want := range []string{
+		"| type | 含义 |",
+		"| --- | --- |",
+		"| PERSON | 人、角色 |",
+		"| ORGANIZATION | 组织、部门 |",
+	} {
+		if !strings.Contains(markdown, want) {
+			t.Fatalf("markdown missing table row %q:\n%s", want, markdown)
+		}
+	}
+	if strings.Contains(markdown, "<table") || strings.Contains(markdown, "<td") || strings.Contains(markdown, "<th") {
+		t.Fatalf("markdown should not keep table markup:\n%s", markdown)
+	}
+}
+
+func TestArticleHTMLToMarkdownEscapesTablePipesAndInlineCode(t *testing.T) {
+	markdown := ArticleHTMLToMarkdown(`<table><thead><tr><th>边类型</th><th>方向</th></tr></thead><tbody><tr><td><section><span leaf=""><code>HAS_CHUNK</code></span></section></td><td><section><span leaf="">Document → Chunk</span></section></td></tr><tr><td><section><span leaf="">a|b</span></section></td><td><section><span leaf="">c</span></section></td></tr></tbody></table>`)
+
+	for _, want := range []string{
+		"| 边类型 | 方向 |",
+		"| `HAS_CHUNK` | Document → Chunk |",
+		"| a\\|b | c |",
+	} {
+		if !strings.Contains(markdown, want) {
+			t.Fatalf("markdown missing table cell %q:\n%s", want, markdown)
+		}
+	}
+}
+
 func TestArticleHTMLToMarkdownSkipsEmptyImages(t *testing.T) {
 	markdown := ArticleHTMLToMarkdown(`<p>before</p>
 <img src="" alt="">

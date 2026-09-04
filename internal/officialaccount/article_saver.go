@@ -75,6 +75,9 @@ var (
 	emReg                         = regexp.MustCompile(`(?is)<(em|i)\b[^>]*>(.*?)</(em|i)>`)
 	inlineCodeReg                 = regexp.MustCompile(`(?is)<code\b[^>]*>(.*?)</code>`)
 	hrReg                         = regexp.MustCompile(`(?i)<hr\b[^>]*\/?>`)
+	tableReg                      = regexp.MustCompile(`(?is)<table\b[^>]*>(.*?)</table>`)
+	tableRowReg                   = regexp.MustCompile(`(?is)<tr\b[^>]*>(.*?)</tr>`)
+	tableCellReg                  = regexp.MustCompile(`(?is)<(th|td)\b[^>]*>(.*?)</(th|td)>`)
 )
 
 func ExtractArticleFromHTML(source []byte, fallbackPath string) (*SavedArticle, error) {
@@ -262,6 +265,7 @@ func ArticleHTMLToMarkdown(contentHTML string) string {
 		}
 		return "`" + stripArticleTags(match[1]) + "`"
 	})
+	md = tableReg.ReplaceAllStringFunc(md, tableToMarkdown)
 	md = hrReg.ReplaceAllString(md, "\n\n---\n\n")
 	md = tagReg.ReplaceAllString(md, "")
 	md = strings.ReplaceAll(stdhtml.UnescapeString(md), "\u00a0", " ")
@@ -573,6 +577,77 @@ func stripArticleTags(source string) string {
 	text = tagReg.ReplaceAllString(text, "")
 	text = strings.ReplaceAll(stdhtml.UnescapeString(text), "\u00a0", " ")
 	return strings.TrimSpace(text)
+}
+
+// tableToMarkdown converts a single <table>…</table> block into a GFM pipe
+// table. It assumes the table's inner markup has already been normalized by
+// the earlier ArticleHTMLToMarkdown passes (inline formatting converted,
+// structural section/span wrappers removed), so each cell only holds plain
+// text plus markdown syntax such as backticks or bold markers.
+func tableToMarkdown(source string) string {
+	tableMatch := tableReg.FindStringSubmatch(source)
+	if len(tableMatch) < 2 {
+		return ""
+	}
+
+	rowMatches := tableRowReg.FindAllStringSubmatch(tableMatch[1], -1)
+	if len(rowMatches) == 0 {
+		return ""
+	}
+
+	var rows [][]string
+	for _, row := range rowMatches {
+		cellMatches := tableCellReg.FindAllStringSubmatch(row[1], -1)
+		if len(cellMatches) == 0 {
+			continue
+		}
+		cells := make([]string, 0, len(cellMatches))
+		for _, cell := range cellMatches {
+			text := stripArticleTags(cell[2])
+			text = strings.ReplaceAll(text, "\n", " ")
+			text = strings.ReplaceAll(text, "|", `\|`)
+			cells = append(cells, text)
+		}
+		rows = append(rows, cells)
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+
+	colCount := 0
+	for _, row := range rows {
+		if len(row) > colCount {
+			colCount = len(row)
+		}
+	}
+	if colCount == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n\n")
+	for i, row := range rows {
+		b.WriteString("|")
+		for j := 0; j < colCount; j++ {
+			cell := ""
+			if j < len(row) {
+				cell = row[j]
+			}
+			b.WriteString(" ")
+			b.WriteString(cell)
+			b.WriteString(" |")
+		}
+		b.WriteString("\n")
+		if i == 0 {
+			b.WriteString("|")
+			for j := 0; j < colCount; j++ {
+				b.WriteString(" --- |")
+			}
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString("\n")
+	return b.String()
 }
 
 func normalizeArticleMarkdown(source string) string {
